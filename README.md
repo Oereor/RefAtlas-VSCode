@@ -1,0 +1,2 @@
+# RefAtlas-VSCode
+
