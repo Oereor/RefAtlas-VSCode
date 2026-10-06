@@ -1,0 +1,26 @@
+{
+  "name": "refatlas-vscode",
+  "displayName": "RefAtlas",
+  "description": "Deterministic AvatarName.Hash reference navigation in raw TurnBasedGameData JSON.",
+  "version": "0.0.1",
+  "publisher": "refatlas-local",
+  "license": "MIT",
+  "engines": { "vscode": "^1.100.0" },
+  "categories": ["Programming Languages"],
+  "extensionKind": ["workspace"],
+  "activationEvents": ["onLanguage:json"],
+  "main": "./dist/extension.js",
+  "scripts": {
+    "build": "tsc -p .",
+    "test": "npm run build && node --test dist/test/context.test.js dist/test/textmap.test.js",
+    "smoke": "npm run build && node dist/smoke.js",
+    "test:extension": "npm run build && node scripts/test-extension.cjs"
+  },
+  "dependencies": { "jsonc-parser": "3.3.1" },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/vscode": "1.100.0",
+    "typescript": "^5.9.3"
+  },
+  "private": true
+}
