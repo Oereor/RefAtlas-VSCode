@@ -1,7 +1,7 @@
 {
   "version": "0.2.0",
   "configurations": [{
-    "name": "RefAtlas V0",
+    "name": "RefAtlas V0.1",
     "type": "extensionHost",
     "request": "launch",
     "args": ["--extensionDevelopmentPath=${workspaceFolder}", "${workspaceFolder}/../TurnBasedGameData"],

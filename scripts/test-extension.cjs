@@ -13,16 +13,24 @@ writeFileSync(path.join(settingsFolder, 'settings.json'), JSON.stringify({
   'update.mode': 'none', 'extensions.autoUpdate': false, 'extensions.autoCheckUpdates': false,
   'telemetry.telemetryLevel': 'off', 'workbench.enableExperiments': false,
   'json.schemaDownload.enable': false,
+  'files.associations': { '*.json': 'plaintext' },
 }));
 const fixture = path.join(artifacts, 'fixture');
-mkdirSync(path.join(fixture, 'ExcelOutput'), { recursive: true });
+mkdirSync(path.join(fixture, 'Config'), { recursive: true });
 mkdirSync(path.join(fixture, 'TextMap'), { recursive: true });
-writeFileSync(path.join(fixture, 'ExcelOutput', 'AvatarConfig.json'), '[{"AvatarName":{"Hash":6186714091647966180},"AvatarFullName":{"Hash":6186714091647966180}}]');
+const hash = '6186714091647966180';
+const missing = '999999999999999999999999999999999999999';
+writeFileSync(path.join(fixture, 'Config', 'Example.json'), `{"Anything":{"Hash":${hash}},"AvatarFullName":{"Hash":${hash}},"StringHash":{"Hash":"${hash}"},"SomeHash":${hash},"HashValue":${hash},"FakeText":"\\\"Hash\\\": ${hash}","Missing":{"Hash":${missing}}}`);
 writeFileSync(path.join(fixture, 'TextMap', 'TextMapCHS.json'), '{\n  "6186714091647966180": "fixture original"\n}');
 const workspace = path.join(artifacts, 'integration.code-workspace');
+const missingRoot = path.join(artifacts, 'no-textmap');
+mkdirSync(missingRoot, { recursive: true });
+writeFileSync(path.join(missingRoot, 'Example.json'), `{"Hash":${hash}}`);
+writeFileSync(path.join(artifacts, 'outside.json'), `{"Hash":${hash}}`);
 writeFileSync(workspace, JSON.stringify({ folders: [
   { path: path.resolve(process.env.REFATLAS_DATASET || path.join(root, '..', 'TurnBasedGameData')) },
   { path: fixture },
+  { path: missingRoot },
 ] }));
 const env = { ...process.env };
 delete env.ELECTRON_RUN_AS_NODE;

@@ -1,42 +1,80 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { identifyAvatarNameHash, SOURCE_PATH } from '../context';
+import { identifyDocumentHashReference, identifyHashReference } from '../context';
 
 const hash = '6186714091647966180';
 test('preserves the unsafe numeric lexeme and its exclusive token range', () => {
-  const text = `[{"AvatarName":{"Hash":${hash}}}]`;
+  const text = `      "Hash": ${hash}`;
   const start = text.indexOf(hash);
   for (let offset = start; offset < start + hash.length; offset++) {
-    assert.deepEqual(identifyAvatarNameHash(text, offset, SOURCE_PATH), { hash, offset: start, length: hash.length });
+    assert.deepEqual(identifyHashReference(text, offset), { hash, startCharacter: start, length: hash.length });
   }
-  assert.equal(identifyAvatarNameHash(text, start - 1, SOURCE_PATH), undefined);
-  assert.equal(identifyAvatarNameHash(text, start + hash.length, SOURCE_PATH), undefined);
+  assert.equal(identifyHashReference(text, start - 1), undefined);
+  assert.equal(identifyHashReference(text, start + hash.length), undefined);
 });
 
-test('recognizes direct AvatarName.Hash in later records, including escaped property names', () => {
-  const text = `[{}, {"Avatar\\u004eame":{"H\\u0061sh":${hash}}}]`;
-  assert.equal(identifyAvatarNameHash(text, text.indexOf(hash), SOURCE_PATH)?.hash, hash);
-});
-
-test('rejects unrelated fields, string values, nested records and non-array roots', () => {
+test('recognizes any parent and root schema, escaped exact keys and later inline properties', () => {
   for (const text of [
-    `[{"AvatarID":${hash}}]`,
-    `[{"AvatarFullName":{"Hash":${hash}}}]`,
-    `[{"AvatarName":{"Hash":"${hash}"}}]`,
-    `[{"Other":{"AvatarName":{"Hash":${hash}}}}]`,
-    `[{"AvatarName":{"Nested":{"Hash":${hash}}}}]`,
-    `{"AvatarName":{"Hash":${hash}}}`,
-    `[[{"AvatarName":{"Hash":${hash}}}]]`,
-    `[{"AvatarName":[{"Hash":${hash}}]}]`,
-  ]) assert.equal(identifyAvatarNameHash(text, text.indexOf(hash), SOURCE_PATH), undefined, text);
+    `{"SkillName":{"Hash":${hash}}}`, `[{}, {"SkillDesc":{"Hash":${hash}}}]`,
+    `[{"Nested":{"Anything":{"Hash":${hash}}}}]`, `{"H\\u0061sh":${hash}}`,
+    `{"Other": 1, "Hash": ${hash}}`, `{"Hash":1,"Hash":${hash}}`,
+  ]) assert.equal(identifyHashReference(text, text.indexOf(hash))?.hash, hash, text);
 });
 
-test('rejects any other relative source path and invalid standard JSON', () => {
-  const valid = `[{"AvatarName":{"Hash":${hash}}}]`;
-  for (const path of ['AvatarConfig.json', 'Other/AvatarConfig.json', 'ExcelOutput/Other.json', `dataset/${SOURCE_PATH}`]) {
-    assert.equal(identifyAvatarNameHash(valid, valid.indexOf(hash), path), undefined);
+test('rejects similar/unrelated keys, non-numeric values and misleading strings', () => {
+  for (const text of [
+    `"AvatarID": ${hash}`, `"HashValue": ${hash}`, `"SomeHash": ${hash}`, `"hash": ${hash}`,
+    `"Hash": "${hash}"`, `"Hash": [${hash}]`, `"Other": ${hash}`,
+    `"Other": "Hash": ${hash}`, `["Hash": ${hash}]`,
+    `"Other": "\\\"Hash\\\": ${hash}"`,
+  ]) assert.equal(identifyHashReference(text, text.indexOf(hash)), undefined, text);
+});
+
+test('does not recognize text inside current-line comments or scanner errors', () => {
+  for (const text of [
+    `// "Hash": ${hash}`, `/* "Hash": ${hash} */`, `/* "Hash": ${hash}`,
+    `/* comment */ "Hash": ${hash}`, `"Bad\\q":1,"Hash":${hash}`,
+  ]) assert.equal(identifyHashReference(text, text.indexOf(hash)), undefined, text);
+});
+
+test('valid JSON number lexemes remain unchanged, including negative/decimal/exponent forms', () => {
+  for (const raw of ['0', '-0', '-123', '1.2300', '1e+20', '1E-02', '1e9999', hash]) {
+    const text = `{"Hash":${raw}}`;
+    const start = text.indexOf(':') + 1;
+    for (let cursor = start; cursor < start + raw.length; cursor++) {
+      assert.equal(identifyHashReference(text, cursor)?.hash, raw, `${raw} at ${cursor}`);
+    }
   }
-  for (const text of [valid.slice(0, -1), valid.replace('}]', '},]'), valid.replace('[', '[/* comment */')]) {
-    assert.equal(identifyAvatarNameHash(text, text.indexOf(hash), SOURCE_PATH), undefined);
+});
+
+test('rejects malformed numeric boundaries and cursors on key/colon/whitespace/delimiter', () => {
+  for (const raw of ['01', '-01', '1e', '1e+', '1.', '+1', '123abc', 'NaN', 'Infinity', '--1']) {
+    const text = `{"Hash":${raw}}`;
+    const start = text.indexOf(':') + 1;
+    for (let cursor = start; cursor < start + raw.length; cursor++) {
+      assert.equal(identifyHashReference(text, cursor), undefined, `${raw} at ${cursor}`);
+    }
   }
+  const text = `{"Hash": ${hash}, "Other":123}`;
+  const start = text.indexOf(hash);
+  for (const cursor of [-1, 0, 2, text.indexOf(':'), start - 1, start + hash.length, text.length, 2.5]) {
+    assert.equal(identifyHashReference(text, cursor), undefined, String(cursor));
+  }
+});
+
+test('small and million-line documents perform exactly one identical source-line read', () => {
+  const lineText = `      "Hash": ${hash}`;
+  function recognizeAt(line: number, lineCount: number) {
+    const accesses: number[] = [];
+    const document = {
+      lineCount,
+      getText(): never { assert.fail('full document access is forbidden'); },
+      lineAt(index: number) { accesses.push(index); assert.equal(index, line); return { text: lineText }; },
+    };
+    const result = identifyDocumentHashReference(document, { line, character: lineText.indexOf(hash) });
+    assert.deepEqual(accesses, [line]);
+    return result;
+  }
+  assert.deepEqual(recognizeAt(1, 3), recognizeAt(600000, 1200000));
+  assert.deepEqual(recognizeAt(600000, 1200000), identifyHashReference(lineText, lineText.indexOf(hash)));
 });

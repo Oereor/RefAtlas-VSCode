@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
-import { relative } from 'node:path';
-import { identifyAvatarNameHash, SOURCE_PATH, TARGET_PATH } from './context';
-import { diskSource, TargetChanged, TextMapResolver, type LookupResult, type TargetSource } from './textmap';
+import { identifyDocumentHashReference, TARGET_PATH } from './context';
+import { diskSource, TargetChanged, TextMapResolver, type TargetSource } from './textmap';
 
 export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel('RefAtlas');
@@ -11,10 +10,10 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(output);
 
   async function resolve(document: vscode.TextDocument, position: vscode.Position, token: vscode.CancellationToken) {
-    if (token.isCancellationRequested || document.uri.scheme !== 'file') return;
+    if (token.isCancellationRequested || document.uri.scheme !== 'file' || !document.uri.path.endsWith('.json')) return;
     const folder = vscode.workspace.getWorkspaceFolder(document.uri);
-    if (!folder || relative(folder.uri.fsPath, document.uri.fsPath).split('\\').join('/') !== SOURCE_PATH) return;
-    const reference = identifyAvatarNameHash(document.getText(), document.offsetAt(position), SOURCE_PATH);
+    if (!folder) return;
+    const reference = identifyDocumentHashReference(document, position);
     if (!reference) return;
     const sourceVersion = document.version;
     const uri = vscode.Uri.joinPath(folder.uri, TARGET_PATH);
@@ -48,26 +47,20 @@ export function activate(context: vscode.ExtensionContext): void {
     const result = await resolver.resolve(source, reference.hash, token);
     if (token.isCancellationRequested || document.version !== sourceVersion) return;
     if (result.kind === 'failure' || result.kind === 'unsupported-layout') output.appendLine(`${TARGET_PATH}: ${result.message}`);
-    return { reference, uri, result, range: new vscode.Range(document.positionAt(reference.offset), document.positionAt(reference.offset + reference.length)) };
+    return { reference, uri, result, range: new vscode.Range(position.line, reference.startCharacter, position.line, reference.startCharacter + reference.length) };
   }
 
-  const selector: vscode.DocumentSelector = { language: 'json', scheme: 'file', pattern: '**/ExcelOutput/AvatarConfig.json' };
+  const selector: vscode.DocumentSelector = { scheme: 'file', pattern: '**/*.json' };
   context.subscriptions.push(
     vscode.languages.registerHoverProvider(selector, {
       async provideHover(document, position, token) {
         const resolved = await resolve(document, position, token);
-        if (!resolved) return;
+        if (!resolved || resolved.result.kind !== 'resolved') return;
         const { result, reference, range } = resolved;
         const markdown = new vscode.MarkdownString();
-        if (result.kind === 'resolved') {
-          markdown.appendText(result.entry.value);
-          markdown.appendMarkdown('\n\n');
-          markdown.appendText(`TextMapCHS\n${reference.hash}`);
-        } else {
-          const message = missingMessage(result);
-          if (!message) return;
-          markdown.appendText(message);
-        }
+        markdown.appendText(result.entry.value);
+        markdown.appendMarkdown('\n\n');
+        markdown.appendText(`TextMapCHS\n${reference.hash}`);
         return new vscode.Hover(markdown, range);
       },
     }),
@@ -80,10 +73,4 @@ export function activate(context: vscode.ExtensionContext): void {
       },
     }),
   );
-}
-
-function missingMessage(result: LookupResult): string | undefined {
-  if (result.kind === 'target-missing') return 'TextMapCHS.json is missing in this workspace folder.';
-  if (result.kind === 'missing-key') return 'No matching key in TextMapCHS.';
-  return undefined;
 }
